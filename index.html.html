@@ -1,0 +1,1398 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 漸進式語塊中翻英練習系統 (Chunking Translation Trainer)</title>
+    <!-- 引入 Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 引入 Font Awesome 圖示庫 -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- 引入 Google Fonts Inter & Noto Sans TC -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', 'Noto Sans TC', sans-serif;
+            background-color: #f8fafc;
+        }
+        /* 自訂捲軸樣式 */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f5f9;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 9999px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+        /* 漸進卡片出現動畫 */
+        @keyframes fadeSlideUp {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        .animate-step {
+            animation: fadeSlideUp 0.35s ease-out forwards;
+        }
+    </style>
+</head>
+<body class="text-slate-800 antialiased min-h-screen flex flex-col">
+
+    <!-- 頂部導覽列 -->
+    <header class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-xs">
+        <div class="max-w-6xl mx-auto px-3 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+            <div class="flex items-center space-x-2.5 sm:space-x-3">
+                <div class="bg-gradient-to-br from-indigo-600 to-purple-600 text-white p-2 rounded-xl shadow-sm">
+                    <i class="fa-solid fa-cubes-stacked text-base sm:text-lg"></i>
+                </div>
+                <div>
+                    <h1 class="text-base sm:text-lg font-bold text-slate-900 tracking-tight leading-tight">Chunking 英語翻譯訓練</h1>
+                    <p class="text-[11px] sm:text-xs text-slate-500 hidden sm:block">由小到大拆解語塊・AI 導師即時批改</p>
+                </div>
+            </div>
+
+            <!-- 模式切換與設定按鈕 -->
+            <div class="flex items-center space-x-2">
+                <div class="flex bg-slate-100 p-1 rounded-xl border border-slate-200">
+                    <button id="tab-student" onclick="switchMode('student')" class="px-2.5 sm:px-4 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-all bg-white text-indigo-600 shadow-sm">
+                        <i class="fa-solid fa-graduation-cap mr-1"></i>學生練習
+                    </button>
+                    <button id="tab-teacher" onclick="switchMode('teacher')" class="px-2.5 sm:px-4 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-all text-slate-600 hover:text-slate-900">
+                        <i class="fa-solid fa-chalkboard-user mr-1"></i>教師出題庫
+                    </button>
+                </div>
+                <button onclick="openShareModal()" class="p-2 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl border border-slate-200 transition-colors" title="分享給學生與設定">
+                    <i class="fa-solid fa-share-nodes"></i>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- 分享與 API 設定彈窗 -->
+    <div id="share-modal" class="hidden fixed inset-0 bg-slate-900/50 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-slate-200 animate-step">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-bold text-slate-900"><i class="fa-solid fa-cloud-arrow-down text-indigo-600 mr-2"></i>發布給學生與打包設定</h3>
+                <button onclick="closeShareModal()" class="text-slate-400 hover:text-slate-600 p-1"><i class="fa-solid fa-xmark text-lg"></i></button>
+            </div>
+            
+            <div class="space-y-4 text-sm">
+                <div class="bg-indigo-50 border border-indigo-200 rounded-xl p-3.5 text-indigo-900">
+                    <p class="font-bold flex items-center"><i class="fa-solid fa-circle-info mr-1.5 text-indigo-600"></i>如何免費讓全班手機連線使用？</p>
+                    <p class="text-xs mt-1.5 text-indigo-800 leading-relaxed">
+                        1. 在下方填入免費申請的 Gemini API Key（可至 Google AI Studio 免費取得）。<br>
+                        2. 點擊「下載整合版網頁 (index.html)」，系統會將您<strong>目前修改好的所有題目與金鑰</strong>自動打包進去。<br>
+                        3. 將 <code>index.html</code> 上傳至免費的 <strong>GitHub Pages</strong>，即可獲得永久公開網址傳給學生！
+                    </p>
+                </div>
+
+                <div>
+                    <label class="block font-semibold text-slate-700 mb-1">1. 設定免費 Gemini API Key (供 AI 批改使用)</label>
+                    <p class="text-xs text-slate-500 mb-2">填入後再下載網頁，學生打開網頁就能直接使用 AI 批改，不需學生自己設定。</p>
+                    <div class="flex gap-2">
+                        <input type="password" id="custom-api-key-input" placeholder="貼上 AIzaSy... 免費金鑰" class="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs outline-none focus:border-indigo-500">
+                        <button onclick="saveCustomApiKey()" class="px-3.5 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl font-medium text-xs whitespace-nowrap">
+                            暫存金鑰
+                        </button>
+                    </div>
+                </div>
+
+                <div class="pt-3 border-t border-slate-100">
+                    <label class="block font-semibold text-slate-700 mb-1.5">2. 打包匯出最新題庫網頁</label>
+                    <button onclick="exportStandaloneHTML()" class="w-full py-2.5 px-4 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-xl font-semibold text-sm shadow-sm transition-all flex items-center justify-center">
+                        <i class="fa-solid fa-download mr-2"></i>下載整合版網頁 (index.html)
+                    </button>
+                    <p class="text-[11px] text-slate-400 mt-1.5 text-center">每次您在教師後台新增或修改題目後，重新下載並覆蓋上傳即可更新全班題庫。</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 編輯題目與解答彈窗 (教師專用) -->
+    <div id="edit-modal" class="hidden fixed inset-0 bg-slate-900/50 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-xl w-full p-6 shadow-xl border border-slate-200 max-h-[90vh] overflow-y-auto animate-step">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-bold text-slate-900"><i class="fa-solid fa-pen-to-square text-indigo-600 mr-2"></i>編輯題目、解答與語塊</h3>
+                <button onclick="closeEditModal()" class="text-slate-400 hover:text-slate-600 p-1"><i class="fa-solid fa-xmark text-lg"></i></button>
+            </div>
+            <input type="hidden" id="edit-q-id">
+            <div class="space-y-4 text-sm">
+                <div>
+                    <label class="block font-semibold text-slate-700 mb-1">中文題目</label>
+                    <textarea id="edit-zh" rows="2" class="w-full rounded-xl border border-slate-300 p-2.5 focus:ring-2 focus:ring-indigo-500 outline-none"></textarea>
+                </div>
+                <div>
+                    <label class="block font-semibold text-slate-700 mb-1">標準英文參考解答</label>
+                    <textarea id="edit-en" rows="2" class="w-full rounded-xl border border-slate-300 p-2.5 focus:ring-2 focus:ring-indigo-500 outline-none"></textarea>
+                </div>
+                <div>
+                    <label class="block font-semibold text-slate-700 mb-1">最終整句組合提示（句型＋時態）</label>
+                    <input type="text" id="edit-sentence-hint" placeholder="例如：時態：未來式 (will + V)｜句型：offer A on B + to V (表目的)" class="w-full rounded-xl border border-slate-300 p-2.5 focus:ring-2 focus:ring-indigo-500 outline-none">
+                </div>
+                <div>
+                    <div class="flex items-center justify-between mb-2">
+                        <label class="font-semibold text-slate-700">語塊拆解步驟 (Chunks)</label>
+                        <button type="button" onclick="addEditChunkRow()" class="text-xs text-indigo-600 hover:text-indigo-800 font-semibold">
+                            <i class="fa-solid fa-plus mr-1"></i>新增語塊
+                        </button>
+                    </div>
+                    <div id="edit-chunks-container" class="space-y-2.5">
+                        <!-- 動態生成語塊編輯列 -->
+                    </div>
+                </div>
+                <div class="flex justify-end space-x-2 pt-3 border-t border-slate-100">
+                    <button onclick="closeEditModal()" class="px-4 py-2 rounded-xl border border-slate-300 text-slate-600 font-medium hover:bg-slate-50">取消</button>
+                    <button onclick="saveEditedQuestion()" class="px-5 py-2 rounded-xl bg-indigo-600 text-white font-medium hover:bg-indigo-700 shadow-sm">
+                        <i class="fa-solid fa-cloud-arrow-up mr-1.5"></i>儲存並同步給學生
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 匯出成績單彈窗 (學生專用) -->
+    <div id="report-modal" class="hidden fixed inset-0 bg-slate-900/50 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-lg w-full p-6 shadow-xl border border-slate-200 animate-step">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-bold text-slate-900"><i class="fa-solid fa-file-lines text-emerald-600 mr-2"></i>匯出練習成績單</h3>
+                <button onclick="closeReportModal()" class="text-slate-400 hover:text-slate-600 p-1"><i class="fa-solid fa-xmark text-lg"></i></button>
+            </div>
+            <div class="space-y-4 text-sm">
+                <div>
+                    <label class="block font-semibold text-slate-700 mb-1">請輸入你的班級與姓名</label>
+                    <input type="text" id="student-name-input" placeholder="例如：高二忠班 王小明" oninput="updateReportPreview()" class="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 outline-none focus:border-indigo-500">
+                </div>
+                <div>
+                    <label class="block font-semibold text-slate-700 mb-1">練習紀錄預覽</label>
+                    <textarea id="report-preview-text" rows="8" readonly class="w-full rounded-xl bg-slate-50 border border-slate-200 p-3 text-xs font-mono text-slate-700 outline-none"></textarea>
+                </div>
+                <div class="flex justify-end space-x-2">
+                    <button onclick="copyReportText()" class="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold shadow-sm transition-colors">
+                        <i class="fa-solid fa-copy mr-1.5"></i>一鍵複製成績單（可貼給老師）
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 全域提示訊息框 (取代 alert) -->
+    <div id="toast-container" class="fixed bottom-5 right-5 z-50 flex flex-col space-y-2 pointer-events-none"></div>
+
+    <!-- 主內容區 -->
+    <main class="flex-grow max-w-6xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-8">
+
+        <!-- ==================== 模式一：學生練習區 ==================== -->
+        <div id="view-student" class="grid grid-cols-1 lg:grid-cols-12 gap-5 sm:gap-6">
+            
+            <!-- 左側（手機版在下方）：題目清單側邊欄 -->
+            <div class="lg:col-span-4 order-2 lg:order-1 bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col max-h-[28rem] lg:max-h-[calc(100vh-8rem)]">
+                <div class="p-3.5 sm:p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50 rounded-t-2xl">
+                    <h2 class="font-bold text-slate-800 text-sm sm:text-base flex items-center">
+                        <i class="fa-solid fa-list-ol text-indigo-600 mr-2"></i>練習題庫 (<span id="total-count">18</span>)
+                    </h2>
+                    <div class="flex items-center space-x-2">
+                        <span id="completed-badge" class="text-xs font-medium bg-emerald-100 text-emerald-700 px-2.5 py-1 rounded-full">
+                            已完成 0 題
+                        </span>
+                        <button onclick="openReportModal()" class="text-xs bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-semibold px-2.5 py-1 rounded-lg border border-indigo-200 transition-colors" title="匯出作答紀錄交作業">
+                            <i class="fa-solid fa-file-export mr-1"></i>交作業
+                        </button>
+                    </div>
+                </div>
+                <div id="question-list" class="overflow-y-auto p-3 space-y-2 flex-grow">
+                    <!-- 題目列表由 JS 動態生成 -->
+                </div>
+            </div>
+
+            <!-- 右側（手機版優先顯示在最上方）：互動式漸進練習區 -->
+            <div class="lg:col-span-8 order-1 lg:order-2 flex flex-col space-y-6">
+                
+                <!-- 題目主卡片 -->
+                <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-7">
+                    <div class="flex items-center justify-between mb-4">
+                        <div class="flex items-center space-x-2">
+                            <span id="current-q-badge" class="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-700 border border-indigo-100">
+                                第 1 題 / 共 18 題
+                            </span>
+                            <span id="sync-status-badge" class="hidden sm:inline-flex items-center text-xs text-emerald-600 font-medium">
+                                <span class="w-2 h-2 rounded-full bg-emerald-500 mr-1.5 animate-pulse"></span>已連線同步
+                            </span>
+                        </div>
+                        <div class="flex space-x-1 sm:space-x-2">
+                            <button onclick="prevQuestion()" class="p-2.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl border border-slate-100 transition-colors" title="上一題">
+                                <i class="fa-solid fa-chevron-left"></i>
+                            </button>
+                            <button onclick="nextQuestion()" class="p-2.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl border border-slate-100 transition-colors" title="下一題">
+                                <i class="fa-solid fa-chevron-right"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- 目標中文句子 -->
+                    <div class="mb-6">
+                        <p class="text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1">目標翻譯句子</p>
+                        <h3 id="target-chinese" class="text-xl sm:text-2xl font-bold text-slate-900 leading-relaxed">
+                            載入中...
+                        </h3>
+                    </div>
+
+                    <!-- 進度條 -->
+                    <div class="mb-6">
+                        <div class="flex justify-between text-xs font-medium text-slate-500 mb-1.5">
+                            <span>漸進練習進度</span>
+                            <span id="progress-text">步驟 1 / 4</span>
+                        </div>
+                        <div class="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+                            <div id="progress-bar" class="bg-indigo-600 h-2 rounded-full transition-all duration-300" style="width: 25%"></div>
+                        </div>
+                    </div>
+
+                    <!-- 語塊步驟容器 -->
+                    <div id="steps-container" class="space-y-4">
+                        <!-- 動態插入每個 Chunk 練習區塊 -->
+                    </div>
+
+                    <!-- AI 總結與回饋區塊 (完成最後一步後顯示) -->
+                    <div id="ai-feedback-section" class="hidden mt-6 pt-6 border-t border-slate-200 animate-step">
+                        <div class="bg-gradient-to-br from-indigo-50 via-white to-purple-50 rounded-2xl p-5 border border-indigo-100 shadow-sm">
+                            <div class="flex items-center justify-between mb-3">
+                                <div class="flex items-center space-x-2">
+                                    <span class="bg-indigo-600 text-white w-7 h-7 rounded-lg flex items-center justify-center text-sm">
+                                        <i class="fa-solid fa-wand-magic-sparkles"></i>
+                                    </span>
+                                    <h4 class="font-bold text-slate-900">AI 導師深度批改與回饋</h4>
+                                </div>
+                                <span id="ai-score-badge" class="hidden px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800">
+                                    評估完成
+                                </span>
+                            </div>
+
+                            <!-- 參考答案對照 -->
+                            <div class="bg-white/80 rounded-xl p-3.5 mb-4 border border-slate-200/80">
+                                <p class="text-xs font-semibold text-slate-400 mb-1">標準參考解答：</p>
+                                <p id="reference-english" class="text-base font-semibold text-emerald-700"></p>
+                            </div>
+
+                            <!-- AI 回饋內容 -->
+                            <div id="ai-feedback-content" class="text-sm text-slate-700 leading-relaxed space-y-2">
+                                <!-- Loading 狀態或 AI 回應 -->
+                            </div>
+                        </div>
+
+                        <div class="mt-5 flex justify-end space-x-3">
+                            <button onclick="resetCurrentQuestion()" class="px-4 py-2.5 rounded-xl border border-slate-300 text-slate-700 font-medium text-sm hover:bg-slate-50 transition-colors">
+                                <i class="fa-solid fa-rotate-right mr-1.5"></i>重新練習本題
+                            </button>
+                            <button onclick="nextQuestion()" class="px-5 py-2.5 rounded-xl bg-indigo-600 text-white font-medium text-sm hover:bg-indigo-700 shadow-sm transition-colors">
+                                下一題練習 <i class="fa-solid fa-arrow-right ml-1.5"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+
+        <!-- ==================== 模式二：教師題庫與 AI 拆解管理 ==================== -->
+        <div id="view-teacher" class="hidden space-y-6">
+            
+            <!-- 新增題目與 AI 自動拆解卡片 -->
+            <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+                <div class="flex items-center space-x-2 mb-4">
+                    <div class="bg-purple-100 text-purple-700 p-2 rounded-lg">
+                        <i class="fa-solid fa-robot"></i>
+                    </div>
+                    <div>
+                        <h2 class="text-lg font-bold text-slate-900">AI 智慧語塊拆解器 (Chunking Generator)</h2>
+                        <p class="text-xs text-slate-500">輸入新的中英對照句子，AI 會自動拆解語塊，並生成整句的「句型與時態提示」！</p>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">中文題目</label>
+                        <textarea id="new-zh-input" rows="2" class="w-full rounded-xl border border-slate-300 p-3 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none" placeholder="例如：我們將提供首次購買的特別折扣來吸引新顧客。"></textarea>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">標準英文參考答案</label>
+                        <textarea id="new-en-input" rows="2" class="w-full rounded-xl border border-slate-300 p-3 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none" placeholder="例如：We will offer special discounts on first purchases to attract new customers."></textarea>
+                    </div>
+                </div>
+
+                <div class="flex flex-wrap items-center justify-between gap-3">
+                    <button id="btn-ai-chunk" onclick="generateChunksWithAI()" class="px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-medium text-sm rounded-xl hover:from-indigo-700 hover:to-purple-700 shadow-sm transition-all flex items-center">
+                        <i class="fa-solid fa-wand-magic-sparkles mr-2"></i>使用 AI 自動拆解並加入題庫
+                    </button>
+                    <span class="text-xs text-slate-400">提示：AI 會自動識別關鍵名詞片語、動詞結構與子句並排序。</span>
+                </div>
+            </div>
+
+            <!-- 現有題庫檢視與編輯 -->
+            <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+                <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
+                    <div>
+                        <h3 class="text-lg font-bold text-slate-900">目前雲端題庫與語塊結構一覽</h3>
+                        <p class="text-xs text-slate-500">點擊「編輯」可修改題目、標準答案或整句提示，儲存後學生端將自動同步更新。</p>
+                    </div>
+                    <button onclick="resetToDefaultQuestions()" class="text-xs text-slate-500 hover:text-rose-600 underline">
+                        恢復預設 18 題
+                    </button>
+                </div>
+                <div id="teacher-question-list" class="space-y-4">
+                    <!-- 動態生成題庫詳情 -->
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- 引入 Firebase SDK 實現跨裝置即時題庫同步 -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, deleteDoc, onSnapshot, collection, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // 預設 18 題題庫（已移除語塊提示，新增整句的句型＋時態提示）
+        const DEFAULT_QUESTIONS = [
+            {
+                id: "q_01", order: 1,
+                zh: "有些人反對選美比賽，因為這些比賽提倡人們需要苗條才能美麗的思想。",
+                en: "Some people oppose beauty contests because these contests promote the idea that people need to be slim to be beautiful.",
+                sentenceHint: "時態：現在簡單式（陳述普遍事實）｜句型：S + V + because + S + V + the idea that + 同位語子句",
+                chunks: [
+                    { zh: "選美比賽", en: "beauty contests" },
+                    { zh: "提倡...的思想", en: "promote the idea that..." },
+                    { zh: "需要苗條才能美麗", en: "need to be slim to be beautiful" }
+                ]
+            },
+            {
+                id: "q_02", order: 2,
+                zh: "觀看這些比賽的人可能會過度在乎自己的身材，並嘗試以極端的方式減重。",
+                en: "Those who watch these contests may care too much about their figure and try to lose weight in extreme ways.",
+                sentenceHint: "時態：現在簡單式 + 助動詞 may｜句型：Those who + V (凡是...的人) + may + V1 and V2",
+                chunks: [
+                    { zh: "觀看這些比賽的人", en: "Those who watch these contests" },
+                    { zh: "過度在乎自己的身材", en: "care too much about their figure" },
+                    { zh: "嘗試以極端的方式減重", en: "try to lose weight in extreme ways" }
+                ]
+            },
+            {
+                id: "q_03", order: 3,
+                zh: "任何曾照顧過小孩的人就會知道養育小孩不簡單。",
+                en: "Anyone who has cared for a child knows that parenting is not easy.",
+                sentenceHint: "時態：關係子句用現在完成式 (has + p.p.) 表經驗，主要子句用現在簡單式 (knows)｜句型：Anyone who... + V + that + 動名詞主詞子句",
+                chunks: [
+                    { zh: "照顧過小孩", en: "has cared for a child" },
+                    { zh: "任何曾照顧過小孩的人", en: "Anyone who has cared for a child" },
+                    { zh: "養育小孩不簡單", en: "parenting is not easy" }
+                ]
+            },
+            {
+                id: "q_04", order: 4,
+                zh: "許多專家提倡家長應該更注意孩子的心理發展，而不只是滿足他們的生理需求。",
+                en: "Many experts promote that parents should pay more attention to their children’s psychological development rather than just meeting their physical needs.",
+                sentenceHint: "時態：現在簡單式 + should + 原形動詞｜句型：S + promote that + S + should + V1 rather than + V2-ing",
+                chunks: [
+                    { zh: "孩子的心理發展", en: "their children’s psychological development" },
+                    { zh: "更注意...", en: "pay more attention to" },
+                    { zh: "而不只是滿足他們的生理需求", en: "rather than just meeting their physical needs" }
+                ]
+            },
+            {
+                id: "q_05", order: 5,
+                zh: "格雷琴(Gretchen)不認同她爸對她男友身材所做的無禮評論。",
+                en: "Gretchen opposed the rude comments that her father made about her boyfriend.",
+                sentenceHint: "時態：過去簡單式 (opposed / made)｜句型：S + V + N + that + S + V (關係子句修飾先行詞)",
+                chunks: [
+                    { zh: "無禮的評論", en: "the rude comments" },
+                    { zh: "她爸對她男友所做的無禮評論", en: "the rude comments that her father made about her boyfriend" },
+                    { zh: "格雷琴不認同...", en: "Gretchen opposed" }
+                ]
+            },
+            {
+                id: "q_06", order: 6,
+                zh: "他說他太胖，配不上他苗條美麗的女兒。",
+                en: "He said he was too fat for his slim, beautiful daughter.",
+                sentenceHint: "時態：過去簡單式（主要子句 said 與從屬子句 was 時態一致）｜句型：S + said + (that) + S + was too + adj. + for + N",
+                chunks: [
+                    { zh: "他苗條美麗的女兒", en: "his slim, beautiful daughter" },
+                    { zh: "太胖而配不上...", en: "too fat for..." }
+                ]
+            },
+            {
+                id: "q_07", order: 7,
+                zh: "因為日益增長的新住民家庭數量，臺灣政府已將七種東南亞語言加入學校課綱。",
+                en: "Because of the growing number of new immigrant families, the Taiwanese government has added seven Southeast Asian languages to the school curriculum.",
+                sentenceHint: "時態：現在完成式 (has added，表已經完成的動作)｜句型：Because of + 名詞片語, S + has added A to B",
+                chunks: [
+                    { zh: "日益增長的新住民家庭數量", en: "the growing number of new immigrant families" },
+                    { zh: "學校課綱", en: "the school curriculum" },
+                    { zh: "已將七種東南亞語言加入...", en: "has added seven Southeast Asian languages to..." }
+                ]
+            },
+            {
+                id: "q_08", order: 8,
+                zh: "這項決定不僅會讓學生具備更好的語言技能，還會讓他們熟悉該區域的不同文化。",
+                en: "This decision will not only equip students with better language skills, but also acquaint them with the region’s different cultures.",
+                sentenceHint: "時態：未來簡單式 (will + 原形動詞)｜句型：S + will + not only + V1 (equip A with B), but also + V2 (acquaint A with B)",
+                chunks: [
+                    { zh: "讓學生具備更好的語言技能", en: "equip students with better language skills" },
+                    { zh: "讓他們熟悉該區域的不同文化", en: "acquaint them with the region’s different cultures" },
+                    { zh: "不僅...而且...", en: "not only ... but also ..." }
+                ]
+            },
+            {
+                id: "q_09", order: 9,
+                zh: "哈利(Harry)開始新工作的頭幾天都花時間在熟悉公司結構和政策。",
+                en: "Harry spent the first few days at his new job acquainting himself with the company’s structure and policies.",
+                sentenceHint: "時態：過去簡單式 (spent)｜句型：S + spent + 時間 + V-ing (acquaint oneself with + N)",
+                chunks: [
+                    { zh: "公司結構和政策", en: "the company’s structure and policies" },
+                    { zh: "熟悉公司結構和政策", en: "acquainting himself with the company’s structure and policies" },
+                    { zh: "開始新工作的頭幾天", en: "the first few days at his new job" }
+                ]
+            },
+            {
+                id: "q_10", order: 10,
+                zh: "身為部門經理，他不僅要監督下屬目前的工作進度，還要制定明年的工作計畫。",
+                en: "As a department manager, he not only supervises his subordinates’ work progress, but also makes plans for the next year.",
+                sentenceHint: "時態：現在簡單式（第三人稱單數動詞加 -s：supervises / makes）｜句型：As + 身分, S + not only + V1, but also + V2",
+                chunks: [
+                    { zh: "身為部門經理", en: "As a department manager" },
+                    { zh: "監督下屬的工作進度", en: "supervises his subordinates’ work progress" },
+                    { zh: "制定明年的工作計畫", en: "makes plans for the next year" }
+                ]
+            },
+            {
+                id: "q_11", order: 11,
+                zh: "舊課綱注重學生對知識的理解，而新課綱旨在讓學生具備將其應用在真實生活中的能力。",
+                en: "While the old curriculum focused on students’ understanding of the knowledge, the new one aims to equip students with the ability to apply it in real life.",
+                sentenceHint: "時態：過去式 (focused，描述舊課綱) 對比 現在式 (aims，描述新課綱)｜句型：While + S1 + V1, S2 (the new one) + aims to + V2",
+                chunks: [
+                    { zh: "注重學生對知識的理解", en: "focused on students’ understanding of the knowledge" },
+                    { zh: "將其應用在真實生活中的能力", en: "the ability to apply it in real life" },
+                    { zh: "新課綱旨在讓學生具備...", en: "the new one aims to equip students with" }
+                ]
+            },
+            {
+                id: "q_12", order: 12,
+                zh: "一些教育學者對新課綱有疑慮，他們擔心學生的表現將無法公平地評量。",
+                en: "Some educators have doubts about the new curriculum and are worried that students’ performance will not be fairly assessed.",
+                sentenceHint: "時態：現在簡單式 (have / are) + 未來被動式 (will not be + p.p.)｜句型：S + V1 + and are worried that + S + will not be + adv. + p.p.",
+                chunks: [
+                    { zh: "對新課綱有疑慮", en: "have doubts about the new curriculum" },
+                    { zh: "學生的表現", en: "students’ performance" },
+                    { zh: "將無法公平地評量", en: "will not be fairly assessed" }
+                ]
+            },
+            {
+                id: "q_13", order: 13,
+                zh: "受到低生育率的影響，許多學校正被迫尋求創新的方法以吸引學生。",
+                en: "Affected by the low birth rates, many schools are being forced to seek innovative ways to attract students.",
+                sentenceHint: "時態：現在進行被動式 (are being + p.p.)｜句型：過去分詞構句 (Affected by...), S + are being forced to + V1 + ways to + V2",
+                chunks: [
+                    { zh: "受到低生育率的影響", en: "Affected by the low birth rates" },
+                    { zh: "創新的方法以吸引學生", en: "innovative ways to attract students" },
+                    { zh: "許多學校正被迫尋求...", en: "many schools are being forced to seek" }
+                ]
+            },
+            {
+                id: "q_14", order: 14,
+                zh: "有些學校與公司合作，提供學生機會以習得專業技能。",
+                en: "Some schools and companies work together to provide students with opportunities to acquire professional skills.",
+                sentenceHint: "時態：現在簡單式 (work)｜句型：S + work together to + provide 人 with 事物 + to V (表目的)",
+                chunks: [
+                    { zh: "習得專業技能", en: "acquire professional skills" },
+                    { zh: "提供學生機會以...", en: "provide students with opportunities to..." },
+                    { zh: "有些學校與公司合作", en: "Some schools and companies work together" }
+                ]
+            },
+            {
+                id: "q_15", order: 15,
+                zh: "知道我對於被要求做的工作毫無經驗，我尋求一位同事的幫忙。",
+                en: "Knowing I had no experience with the work I was asked to do, I sought out the help of a colleague.",
+                sentenceHint: "時態：過去簡單式 (had / was asked / sought)｜句型：現在分詞構句 (Knowing...), S + sought out + N",
+                chunks: [
+                    { zh: "我被要求做的工作", en: "the work I was asked to do" },
+                    { zh: "知道我對此毫無經驗", en: "Knowing I had no experience with..." },
+                    { zh: "我尋求一位同事的幫忙", en: "I sought out the help of a colleague" }
+                ]
+            },
+            {
+                id: "q_16", order: 16,
+                zh: "詹姆士(James)提供了我一些上一個專案裡使用的文件。",
+                en: "James provided me with some documents used in the last project.",
+                sentenceHint: "時態：過去簡單式 (provided)｜句型：S + provided + 人 + with + N + 過去分詞片語 (used in... 後位修飾)",
+                chunks: [
+                    { zh: "上一個專案裡使用的文件", en: "some documents used in the last project" },
+                    { zh: "詹姆士提供了我...", en: "James provided me with..." }
+                ]
+            },
+            {
+                id: "q_17", order: 17,
+                zh: "我們公司正與一個時尚品牌合作，以行銷我們的最新商品。",
+                en: "Our company is collaborating with a fashion brand to market our latest products.",
+                sentenceHint: "時態：現在進行式 (is collaborating，表目前正在進行)｜句型：S + is collaborating with + 對象 + to V (表目的)",
+                chunks: [
+                    { zh: "與一個時尚品牌合作", en: "collaborating with a fashion brand" },
+                    { zh: "以行銷我們的最新商品", en: "to market our latest products" }
+                ]
+            },
+            {
+                id: "q_18", order: 18,
+                zh: "我們將提供首次購買的特別折扣來吸引新顧客。",
+                en: "We will offer special discounts on first purchases to attract new customers.",
+                sentenceHint: "時態：未來簡單式 (will + offer)｜句型：S + will offer + N + on + 對象 + to V (表目的)",
+                chunks: [
+                    { zh: "特別折扣", en: "special discounts" },
+                    { zh: "首次購買的特別折扣", en: "special discounts on first purchases" },
+                    { zh: "吸引新顧客", en: "to attract new customers" }
+                ]
+            }
+        ];
+
+        // 全域狀態
+        let questions = [...DEFAULT_QUESTIONS];
+        let currentIndex = 0;
+        let completedRecords = {};
+        let currentStepIndex = 0;
+        let customApiKey = ""; // __EMBEDDED_API_KEY_MARKER__
+
+        // Firebase 雲端即時資料庫設定
+        let db = null;
+        let auth = null;
+        let currentUser = null;
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'chunking-trainer-default';
+
+        async function initCloudSync() {
+            try {
+                if (typeof __firebase_config === 'undefined') {
+                    console.log("未偵測到雲端設定，使用本機預設題庫模式");
+                    renderAllViews();
+                    return;
+                }
+                const firebaseConfig = JSON.parse(__firebase_config);
+                const app = initializeApp(firebaseConfig);
+                auth = getAuth(app);
+                db = getFirestore(app);
+
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    await signInWithCustomToken(auth, __initial_auth_token);
+                } else {
+                    await signInAnonymously(auth);
+                }
+
+                currentUser = auth.currentUser;
+                if (!currentUser) return;
+
+                const questionsColRef = collection(db, 'artifacts', appId, 'public', 'data', 'questions');
+                
+                onSnapshot(questionsColRef, async (snapshot) => {
+                    if (snapshot.empty) {
+                        const batch = writeBatch(db);
+                        DEFAULT_QUESTIONS.forEach(q => {
+                            const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'questions', q.id);
+                            batch.set(docRef, q);
+                        });
+                        await batch.commit();
+                    } else {
+                        const fetched = [];
+                        snapshot.forEach(docSnap => {
+                            fetched.push(docSnap.data());
+                        });
+                        fetched.sort((a, b) => (a.order || 0) - (b.order || 0));
+                        
+                        const prevQuestionId = questions[currentIndex]?.id;
+                        questions = fetched;
+
+                        const newIdx = questions.findIndex(q => q.id === prevQuestionId);
+                        if (newIdx !== -1) {
+                            currentIndex = newIdx;
+                        } else if (currentIndex >= questions.length) {
+                            currentIndex = 0;
+                        }
+
+                        renderAllViews(true);
+                    }
+                }, (error) => {
+                    console.error("雲端同步監聽失敗:", error);
+                    renderAllViews();
+                });
+
+            } catch (err) {
+                console.error("初始化雲端同步異常:", err);
+                renderAllViews();
+            }
+        }
+
+        function renderAllViews(isSyncUpdate = false) {
+            renderQuestionList();
+            if (isSyncUpdate && questions[currentIndex]) {
+                const q = questions[currentIndex];
+                document.getElementById('current-q-badge').textContent = `第 ${currentIndex + 1} 題 / 共 ${questions.length} 題`;
+                document.getElementById('target-chinese').textContent = q.zh;
+                document.getElementById('reference-english').textContent = q.en;
+            } else {
+                loadQuestion(currentIndex);
+            }
+            renderTeacherQuestionList();
+        }
+
+        window.onload = () => {
+            initCloudSync();
+        };
+
+        // ==================== UI 切換與彈窗管理 ====================
+        window.switchMode = function(mode) {
+            const btnStudent = document.getElementById('tab-student');
+            const btnTeacher = document.getElementById('tab-teacher');
+            const viewStudent = document.getElementById('view-student');
+            const viewTeacher = document.getElementById('view-teacher');
+
+            if (mode === 'student') {
+                btnStudent.className = "px-2.5 sm:px-4 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-all bg-white text-indigo-600 shadow-sm";
+                btnTeacher.className = "px-2.5 sm:px-4 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-all text-slate-600 hover:text-slate-900";
+                viewStudent.classList.remove('hidden');
+                viewTeacher.classList.add('hidden');
+                renderQuestionList();
+                loadQuestion(currentIndex);
+            } else {
+                btnTeacher.className = "px-2.5 sm:px-4 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-all bg-white text-indigo-600 shadow-sm";
+                btnStudent.className = "px-2.5 sm:px-4 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-all text-slate-600 hover:text-slate-900";
+                viewTeacher.classList.remove('hidden');
+                viewStudent.classList.add('hidden');
+                renderTeacherQuestionList();
+            }
+        };
+
+        window.openShareModal = function() {
+            document.getElementById('custom-api-key-input').value = customApiKey;
+            document.getElementById('share-modal').classList.remove('hidden');
+        };
+        window.closeShareModal = function() {
+            document.getElementById('share-modal').classList.add('hidden');
+        };
+        window.saveCustomApiKey = function() {
+            customApiKey = document.getElementById('custom-api-key-input').value.trim();
+            showToast(customApiKey ? '已暫存 API Key！點擊下方下載即可打包進網頁' : '已清除自訂金鑰', 'success');
+        };
+
+        // 匯出包含最新題庫與 API Key 的獨立 index.html 檔案
+        window.exportStandaloneHTML = function() {
+            const inputKey = document.getElementById('custom-api-key-input').value.trim();
+            if (inputKey) {
+                customApiKey = inputKey;
+            }
+
+            // 取得目前完整 HTML 原始碼
+            let fullHtml = "<!DOCTYPE html>\n" + document.documentElement.outerHTML;
+
+            // 1. 將目前最新修改的 questions 陣列寫入預設題庫中
+            const serializedQuestions = JSON.stringify(questions, null, 12);
+            fullHtml = fullHtml.replace(
+                /const DEFAULT_QUESTIONS = \[[\s\S]*?\n        \];/,
+                `const DEFAULT_QUESTIONS = ${serializedQuestions};`
+            );
+
+            // 2. 將老師填入的 API Key 嵌入網頁變數中，學生打開即可直接用 AI 批改
+            const safeKey = customApiKey.replace(/"/g, '\\"');
+            fullHtml = fullHtml.replace(
+                /let customApiKey = ".*?"; \/\/ __EMBEDDED_API_KEY_MARKER__/,
+                `let customApiKey = "${safeKey}"; // __EMBEDDED_API_KEY_MARKER__`
+            );
+
+            // 3. 清除目前預覽畫面上已經動態渲染出的舊 DOM 內容，確保學生打開時是乾淨初始狀態
+            const parser = new DOMParser();
+            const docObj = parser.parseFromString(fullHtml, 'text/html');
+            const shareModalEl = docObj.getElementById('share-modal');
+            if (shareModalEl) shareModalEl.classList.add('hidden');
+            const toastEl = docObj.getElementById('toast-container');
+            if (toastEl) toastEl.innerHTML = '';
+
+            const finalOutput = "<!DOCTYPE html>\n" + docObj.documentElement.outerHTML;
+
+            // 觸發瀏覽器下載 index.html
+            const blob = new Blob([finalOutput], { type: 'text/html;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'index.html';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+
+            showToast('已成功打包並下載 index.html！', 'success');
+        };
+
+        // 成績單匯出彈窗
+        window.openReportModal = function() {
+            updateReportPreview();
+            document.getElementById('report-modal').classList.remove('hidden');
+        };
+        window.closeReportModal = function() {
+            document.getElementById('report-modal').classList.add('hidden');
+        };
+        window.updateReportPreview = function() {
+            const name = document.getElementById('student-name-input').value.trim() || '未填寫姓名';
+            const records = Object.values(completedRecords);
+            const dateStr = new Date().toLocaleDateString('zh-TW');
+            
+            let text = `【Chunking AI 中翻英練習成績單】\n`;
+            text += `學生姓名：${name}\n`;
+            text += `練習日期：${dateStr}\n`;
+            text += `完成進度：${records.length} / ${questions.length} 題\n`;
+            text += `====================================\n\n`;
+
+            if (records.length === 0) {
+                text += `(尚未完成任何整句批改紀錄，請先完成題目並送出 AI 批改喔！)`;
+            } else {
+                records.forEach((rec, i) => {
+                    text += `${i + 1}. 題目：${rec.zh}\n`;
+                    text += `   學生作答：${rec.userSentence}\n`;
+                    text += `   AI 評價摘要：${rec.summary}\n\n`;
+                });
+            }
+            document.getElementById('report-preview-text').value = text;
+        };
+        window.copyReportText = function() {
+            const area = document.getElementById('report-preview-text');
+            area.select();
+            document.execCommand('copy');
+            showToast('已複製成績單！可直接貼到 Classroom 或 LINE 交作業', 'success');
+        };
+
+        window.showToast = function(message, type = 'info') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            
+            const colors = {
+                info: 'bg-slate-800 text-white',
+                success: 'bg-emerald-600 text-white',
+                warning: 'bg-amber-500 text-white',
+                error: 'bg-rose-600 text-white'
+            };
+
+            const icons = {
+                info: 'fa-circle-info',
+                success: 'fa-circle-check',
+                warning: 'fa-triangle-exclamation',
+                error: 'fa-circle-xmark'
+            };
+
+            toast.className = `${colors[type]} px-4 py-3 rounded-xl shadow-lg flex items-center space-x-2.5 text-sm font-medium pointer-events-auto transform transition-all duration-300 translate-y-2 opacity-0`;
+            toast.innerHTML = `<i class="fa-solid ${icons[type]}"></i><span>${message}</span>`;
+            
+            container.appendChild(toast);
+            requestAnimationFrame(() => toast.classList.remove('translate-y-2', 'opacity-0'));
+
+            setTimeout(() => {
+                toast.classList.add('opacity-0', 'translate-y-2');
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        };
+
+        // ==================== 學生練習核心邏輯 ====================
+        function renderQuestionList() {
+            const listEl = document.getElementById('question-list');
+            document.getElementById('total-count').textContent = questions.length;
+            const completedCount = Object.keys(completedRecords).length;
+            document.getElementById('completed-badge').textContent = `已完成 ${completedCount} 題`;
+
+            listEl.innerHTML = questions.map((q, idx) => {
+                const isActive = idx === currentIndex;
+                const isDone = Boolean(completedRecords[q.id]);
+                return `
+                    <button onclick="loadQuestion(${idx})" 
+                        class="w-full text-left p-3 rounded-xl border transition-all flex items-start space-x-3 ${
+                            isActive 
+                            ? 'bg-indigo-50/80 border-indigo-300 shadow-sm' 
+                            : 'bg-white border-slate-100 hover:border-slate-300 hover:bg-slate-50'
+                        }">
+                        <span class="flex-shrink-0 w-6 h-6 rounded-full text-xs font-bold flex items-center justify-center mt-0.5 ${
+                            isDone 
+                            ? 'bg-emerald-100 text-emerald-700' 
+                            : (isActive ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500')
+                        }">
+                            ${isDone ? '<i class="fa-solid fa-check"></i>' : idx + 1}
+                        </span>
+                        <span class="text-sm font-medium line-clamp-2 ${isActive ? 'text-indigo-950' : 'text-slate-700'}">
+                            ${q.zh}
+                        </span>
+                    </button>
+                `;
+            }).join('');
+        }
+
+        window.loadQuestion = function(index) {
+            if (index < 0 || index >= questions.length) return;
+            currentIndex = index;
+            currentStepIndex = 0;
+
+            const q = questions[currentIndex];
+            document.getElementById('current-q-badge').textContent = `第 ${currentIndex + 1} 題 / 共 ${questions.length} 題`;
+            document.getElementById('target-chinese').textContent = q.zh;
+            document.getElementById('ai-feedback-section').classList.add('hidden');
+            
+            renderQuestionList();
+            renderSteps();
+        };
+
+        window.prevQuestion = function() {
+            if (currentIndex > 0) loadQuestion(currentIndex - 1);
+            else showToast('已經是第一題囉！', 'info');
+        };
+
+        window.nextQuestion = function() {
+            if (currentIndex < questions.length - 1) loadQuestion(currentIndex + 1);
+            else showToast('恭喜！已經是最後一題了！', 'success');
+        };
+
+        window.resetCurrentQuestion = function() {
+            loadQuestion(currentIndex);
+        };
+
+        function renderSteps() {
+            const q = questions[currentIndex];
+            const totalSteps = q.chunks.length + 1;
+            const container = document.getElementById('steps-container');
+            
+            const progressPercent = Math.min(100, Math.round(((currentStepIndex + 1) / totalSteps) * 100));
+            document.getElementById('progress-bar').style.width = `${progressPercent}%`;
+            document.getElementById('progress-text').textContent = `步驟 ${Math.min(currentStepIndex + 1, totalSteps)} / ${totalSteps}`;
+
+            container.innerHTML = '';
+
+            for (let i = 0; i <= currentStepIndex; i++) {
+                if (i < q.chunks.length) {
+                    // 語塊練習卡片（不提供提示，讓學生直接練習）
+                    const chunk = q.chunks[i];
+                    const isCompleted = i < currentStepIndex;
+                    const stepHtml = `
+                        <div class="p-4 rounded-xl border ${isCompleted ? 'bg-emerald-50/40 border-emerald-200' : 'bg-slate-50 border-indigo-200 shadow-sm'} animate-step">
+                            <div class="flex items-center justify-between mb-2">
+                                <span class="text-xs font-bold uppercase tracking-wider ${isCompleted ? 'text-emerald-700' : 'text-indigo-600'}">
+                                    <i class="fa-solid fa-puzzle-piece mr-1"></i>語塊拆解 ${i + 1}
+                                </span>
+                            </div>
+                            
+                            <p class="text-base font-bold text-slate-800 mb-3">${chunk.zh}</p>
+
+                            ${isCompleted ? `
+                                <div class="flex items-center justify-between bg-white px-3.5 py-2.5 rounded-lg border border-emerald-200 text-sm">
+                                    <span class="font-medium text-emerald-800"><i class="fa-solid fa-check-circle text-emerald-500 mr-2"></i>參考語塊：${chunk.en}</span>
+                                </div>
+                            ` : `
+                                <div class="flex flex-col sm:flex-row gap-2">
+                                    <input type="text" id="chunk-input-${i}" 
+                                        onkeydown="if(event.key === 'Enter') checkChunkStep(${i})"
+                                        class="flex-grow rounded-xl border border-slate-300 px-3.5 py-3 text-base sm:text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none bg-white" 
+                                        placeholder="請輸入此語塊的英文..." autocomplete="off" autocapitalize="none">
+                                    <button onclick="checkChunkStep(${i})" class="px-4 py-3 sm:py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-xl transition-colors whitespace-nowrap">
+                                        確認語塊 <i class="fa-solid fa-arrow-down ml-1"></i>
+                                    </button>
+                                </div>
+                                <div id="chunk-feedback-${i}" class="mt-2.5 text-xs hidden"></div>
+                            `}
+                        </div>
+                    `;
+                    container.insertAdjacentHTML('beforeend', stepHtml);
+                } else {
+                    // 最後一步：完整句子挑戰（附帶句型與時態提示）
+                    const hasSentenceHint = Boolean(q.sentenceHint && q.sentenceHint.trim());
+                    const finalHtml = `
+                        <div class="p-4 sm:p-5 rounded-xl border-2 border-indigo-500 bg-indigo-50/30 shadow-md animate-step">
+                            <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+                                <span class="text-xs font-bold uppercase tracking-wider text-indigo-700 bg-indigo-100 px-2.5 py-1 rounded-md">
+                                    <i class="fa-solid fa-flag-checkered mr-1"></i>最終挑戰：組合成完整句子
+                                </span>
+                                ${hasSentenceHint ? `
+                                    <button type="button" onclick="toggleFinalHint()" class="text-xs bg-amber-100 hover:bg-amber-200 text-amber-800 font-semibold px-3 py-1 rounded-lg border border-amber-200 transition-colors">
+                                        <i class="fa-regular fa-lightbulb mr-1"></i>句型與時態提示
+                                    </button>
+                                ` : ''}
+                            </div>
+
+                            ${hasSentenceHint ? `
+                                <div id="final-sentence-hint" class="hidden text-xs bg-amber-50 text-amber-900 px-3.5 py-2.5 rounded-xl mb-3 border border-amber-200 leading-relaxed">
+                                    <span class="font-bold text-amber-800"><i class="fa-solid fa-compass mr-1"></i>組句提示：</span>${q.sentenceHint}
+                                </div>
+                            ` : ''}
+
+                            <p class="text-sm text-slate-600 mb-3">太棒了！請將前面的語塊串連起來，寫出完整的英文句子：</p>
+                            <p class="text-base font-bold text-slate-900 mb-3 bg-white p-3 rounded-lg border border-slate-200">${q.zh}</p>
+                            
+                            <textarea id="final-sentence-input" rows="3" 
+                                onkeydown="if(event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); submitFinalSentence(); }"
+                                class="w-full rounded-xl border border-slate-300 p-3.5 text-base focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none bg-white mb-3" 
+                                placeholder="在此輸入完整的英文翻譯..."></textarea>
+                            
+                            <div class="flex justify-end">
+                                <button id="btn-submit-final" onclick="submitFinalSentence()" class="w-full sm:w-auto justify-center px-6 py-3 sm:py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-semibold text-sm rounded-xl shadow-sm transition-all flex items-center">
+                                    <i class="fa-solid fa-paper-plane mr-2"></i>送出並請 AI 老師批改
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                    container.insertAdjacentHTML('beforeend', finalHtml);
+                }
+            }
+
+            setTimeout(() => {
+                if (currentStepIndex < q.chunks.length) {
+                    const input = document.getElementById(`chunk-input-${currentStepIndex}`);
+                    if (input) input.focus();
+                } else {
+                    const finalInput = document.getElementById('final-sentence-input');
+                    if (finalInput) finalInput.focus();
+                }
+            }, 100);
+        }
+
+        window.toggleFinalHint = function() {
+            const hintEl = document.getElementById('final-sentence-hint');
+            if (hintEl) hintEl.classList.toggle('hidden');
+        };
+
+        window.checkChunkStep = function(idx) {
+            const q = questions[currentIndex];
+            const chunk = q.chunks[idx];
+            const inputEl = document.getElementById(`chunk-input-${idx}`);
+            const userVal = inputEl.value.trim();
+
+            if (!userVal) {
+                showToast('請先輸入英文語塊再確認喔！', 'warning');
+                inputEl.focus();
+                return;
+            }
+
+            const normalize = (str) => str.toLowerCase().replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, "").replace(/\s+/g, " ").trim();
+            const isExactMatch = normalize(userVal) === normalize(chunk.en);
+
+            if (isExactMatch) {
+                showToast('語塊完全正確！進入下一步', 'success');
+                currentStepIndex++;
+                renderSteps();
+            } else {
+                const fbEl = document.getElementById(`chunk-feedback-${idx}`);
+                fbEl.classList.remove('hidden');
+                fbEl.innerHTML = `
+                    <div class="p-3 rounded-lg bg-amber-50 border border-amber-200 text-slate-700 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                        <div>
+                            <span class="font-semibold text-amber-800">你的輸入：</span>${userVal}<br>
+                            <span class="font-semibold text-emerald-700">建議語塊：</span><span class="font-mono font-bold">${chunk.en}</span>
+                        </div>
+                        <button onclick="forceNextChunk()" class="px-3.5 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-medium text-xs whitespace-nowrap self-start sm:self-center">
+                            我記住了，繼續 <i class="fa-solid fa-forward ml-1"></i>
+                        </button>
+                    </div>
+                `;
+            }
+        };
+
+        window.forceNextChunk = function() {
+            currentStepIndex++;
+            renderSteps();
+        };
+
+        // ==================== Gemini API 串接：AI 批改最終整句翻譯 ====================
+        window.submitFinalSentence = async function() {
+            const q = questions[currentIndex];
+            const inputEl = document.getElementById('final-sentence-input');
+            const userSentence = inputEl.value.trim();
+
+            if (!userSentence) {
+                showToast('請輸入完整的英文句子！', 'warning');
+                inputEl.focus();
+                return;
+            }
+
+            const btnSubmit = document.getElementById('btn-submit-final');
+            btnSubmit.disabled = true;
+            btnSubmit.innerHTML = `<i class="fa-solid fa-spinner fa-spin mr-2"></i>AI 老師正在批改中...`;
+
+            const feedbackSection = document.getElementById('ai-feedback-section');
+            const feedbackContent = document.getElementById('ai-feedback-content');
+            const scoreBadge = document.getElementById('ai-score-badge');
+            
+            document.getElementById('reference-english').textContent = q.en;
+            feedbackSection.classList.remove('hidden');
+            scoreBadge.classList.add('hidden');
+            feedbackContent.innerHTML = `
+                <div class="flex items-center space-x-3 text-indigo-600 py-4">
+                    <i class="fa-solid fa-circle-notch fa-spin text-xl"></i>
+                    <span>正在分析你的文法結構、單字搭配與語意精準度...</span>
+                </div>
+            `;
+
+            const systemPrompt = `你是一位親切、專業的台灣高中與大學英文翻譯家教。
+學生正在練習「語塊拆解（Chunking）中翻英」。
+請比對【中文原句】、【標準參考解答】與【學生的英文翻譯】，並用繁體中文給予清晰、有建設性的回饋。
+格式要求（請使用簡單的 HTML 標籤如 <p>, <ul>, <li>, <strong> 排版，不要使用 Markdown 語法符號如 ** 或 #）：
+1. <strong>整體評價與給分</strong>（例如：95/100 分 - 非常道地！或 80/100 分 - 句意正確，但有小文法可優化）。
+2. <strong>亮點肯定</strong>：稱讚學生寫對的語塊、單字或句型（即使學生用了與參考答案不同的同義詞或正確文法，也要給予肯定）。
+3. <strong>微調與文法建議</strong>：指出拼字、時態、單複數、介系詞或中式英文問題；若完全正確，可補充一個更進階的同義替換表達。`;
+
+            const userQuery = `【中文原句】：${q.zh}
+【標準參考解答】：${q.en}
+【學生的英文翻譯】：${userSentence}`;
+
+            try {
+                const aiResponseText = await callGeminiWithRetry(systemPrompt, userQuery);
+                feedbackContent.innerHTML = aiResponseText;
+                scoreBadge.classList.remove('hidden');
+
+                const tempDiv = document.createElement('div');
+                tempDiv.innerHTML = aiResponseText;
+                const plainText = tempDiv.textContent || tempDiv.innerText || "";
+                const firstLine = plainText.split('\n').map(s => s.trim()).filter(Boolean)[0] || "已完成 AI 批改";
+
+                completedRecords[q.id] = {
+                    zh: q.zh,
+                    userSentence: userSentence,
+                    summary: firstLine
+                };
+                renderQuestionList();
+
+            } catch (error) {
+                console.error("AI 批改失敗:", error);
+                feedbackContent.innerHTML = `
+                    <div class="p-3 bg-rose-50 text-rose-700 rounded-xl border border-rose-200">
+                        <p class="font-semibold"><i class="fa-solid fa-triangle-exclamation mr-1"></i>AI 連線暫時忙碌</p>
+                        <p class="text-xs mt-1">請先對照上方的「標準參考解答」檢查單字與時態，或稍後再試一次。</p>
+                    </div>
+                `;
+                completedRecords[q.id] = {
+                    zh: q.zh,
+                    userSentence: userSentence,
+                    summary: "已對照參考解答"
+                };
+                renderQuestionList();
+            } finally {
+                btnSubmit.disabled = false;
+                btnSubmit.innerHTML = `<i class="fa-solid fa-paper-plane mr-2"></i>重新送出 AI 批改`;
+            }
+        };
+
+        // ==================== 教師出題與編輯 (即時同步至雲端) ====================
+        window.generateChunksWithAI = async function() {
+            const zhInput = document.getElementById('new-zh-input').value.trim();
+            const enInput = document.getElementById('new-en-input').value.trim();
+
+            if (!zhInput || !enInput) {
+                showToast('請同時輸入「中文題目」與「標準英文參考答案」！', 'warning');
+                return;
+            }
+
+            const btn = document.getElementById('btn-ai-chunk');
+            btn.disabled = true;
+            btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin mr-2"></i>AI 正在分析句構並拆解語塊...`;
+
+            const systemPrompt = `你是一位專精於「語塊教學法 (Lexical Approach / Chunking)」的英語教師。
+請將使用者提供的中英對照句子，拆解成 2 到 4 個「由小到大、由核心片語到子句」的漸進式練習語塊 (chunks)，並針對整句提供簡潔的「句型與時態提示」。
+請嚴格遵守 JSON 格式回傳。`;
+
+            const userQuery = `請拆解以下句子：
+中文：${zhInput}
+英文：${enInput}`;
+
+            const schema = {
+                type: "OBJECT",
+                properties: {
+                    sentenceHint: {
+                        type: "STRING",
+                        description: "給學生在最後組合整句時參考的簡短提示，包含『時態』與『核心句型』（繁體中文，例如：時態：現在完成式｜句型：S + has + p.p. + to V）"
+                    },
+                    chunks: {
+                        type: "ARRAY",
+                        items: {
+                            type: "OBJECT",
+                            properties: {
+                                zh: { type: "STRING", description: "中文語塊" },
+                                en: { type: "STRING", description: "對應的英文語塊" }
+                            },
+                            required: ["zh", "en"]
+                        }
+                    }
+                },
+                required: ["sentenceHint", "chunks"]
+            };
+
+            try {
+                const jsonResult = await callGeminiStructuredWithRetry(systemPrompt, userQuery, schema);
+                if (jsonResult && jsonResult.chunks && jsonResult.chunks.length > 0) {
+                    const minOrder = questions.length > 0 ? Math.min(...questions.map(q => q.order || 0)) - 1 : 0;
+                    const newId = `q_${Date.now()}`;
+                    const newQuestion = {
+                        id: newId,
+                        order: minOrder,
+                        zh: zhInput,
+                        en: enInput,
+                        sentenceHint: jsonResult.sentenceHint || "",
+                        chunks: jsonResult.chunks
+                    };
+
+                    if (db && currentUser) {
+                        await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'questions', newId), newQuestion);
+                    } else {
+                        questions.unshift(newQuestion);
+                        renderAllViews();
+                    }
+                    
+                    document.getElementById('new-zh-input').value = '';
+                    document.getElementById('new-en-input').value = '';
+                    showToast('已自動拆解並即時同步給所有學生！', 'success');
+                } else {
+                    throw new Error("回傳格式不符");
+                }
+            } catch (error) {
+                console.error("AI 拆解失敗:", error);
+                showToast('AI 拆解語塊時發生錯誤，請稍後再試。', 'error');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = `<i class="fa-solid fa-wand-magic-sparkles mr-2"></i>使用 AI 自動拆解並加入題庫`;
+            }
+        };
+
+        function renderTeacherQuestionList() {
+            const container = document.getElementById('teacher-question-list');
+            container.innerHTML = questions.map((q, idx) => `
+                <div class="p-4 rounded-xl border border-slate-200 bg-slate-50/50 hover:bg-white transition-colors">
+                    <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-3 mb-2">
+                        <div>
+                            <span class="inline-block px-2 py-0.5 bg-indigo-100 text-indigo-700 text-xs font-bold rounded mr-2">#${idx + 1}</span>
+                            <span class="font-bold text-slate-900">${q.zh}</span>
+                            <p class="text-sm text-emerald-700 font-medium mt-1">${q.en}</p>
+                            ${q.sentenceHint ? `<p class="text-xs text-amber-700 mt-1"><i class="fa-regular fa-lightbulb mr-1"></i>整句提示：${q.sentenceHint}</p>` : ''}
+                        </div>
+                        <div class="flex space-x-2 flex-shrink-0">
+                            <button onclick="openEditModal('${q.id}')" class="px-3 py-1.5 bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200 rounded-lg text-xs font-semibold">
+                                <i class="fa-solid fa-pen mr-1"></i>編輯題目/解答
+                            </button>
+                            <button onclick="practiceSpecificQuestion(${idx})" class="px-3 py-1.5 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded-lg text-xs font-semibold">
+                                預覽練習
+                            </button>
+                            <button onclick="deleteQuestion('${q.id}')" class="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg" title="刪除題目">
+                                <i class="fa-solid fa-trash-can"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="mt-3 pt-3 border-t border-slate-200/80 flex flex-wrap gap-2">
+                        ${q.chunks.map((c, cIdx) => `
+                            <div class="bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-xs shadow-xs">
+                                <span class="font-bold text-indigo-600">Step ${cIdx + 1}:</span> 
+                                <span class="text-slate-700">${c.zh}</span> 
+                                <i class="fa-solid fa-arrow-right text-slate-300 mx-1"></i> 
+                                <span class="font-mono font-semibold text-slate-900">${c.en}</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // 編輯題目與解答彈窗邏輯
+        window.openEditModal = function(qId) {
+            const q = questions.find(item => item.id === qId);
+            if (!q) return;
+
+            document.getElementById('edit-q-id').value = q.id;
+            document.getElementById('edit-zh').value = q.zh;
+            document.getElementById('edit-en').value = q.en;
+            document.getElementById('edit-sentence-hint').value = q.sentenceHint || '';
+
+            const container = document.getElementById('edit-chunks-container');
+            container.innerHTML = '';
+            q.chunks.forEach(c => addEditChunkRow(c.zh, c.en));
+
+            document.getElementById('edit-modal').classList.remove('hidden');
+        };
+
+        window.closeEditModal = function() {
+            document.getElementById('edit-modal').classList.add('hidden');
+        };
+
+        window.addEditChunkRow = function(zh = '', en = '') {
+            const container = document.getElementById('edit-chunks-container');
+            const row = document.createElement('div');
+            row.className = "p-3 bg-slate-50 rounded-xl border border-slate-200 relative edit-chunk-item";
+            row.innerHTML = `
+                <button type="button" onclick="this.parentElement.remove()" class="absolute top-2.5 right-2.5 text-slate-400 hover:text-rose-600 text-xs">
+                    <i class="fa-solid fa-trash"></i>
+                </button>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 pr-6">
+                    <input type="text" class="chunk-zh rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs" placeholder="中文語塊" value="${zh}">
+                    <input type="text" class="chunk-en rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs font-mono" placeholder="英文語塊" value="${en}">
+                </div>
+            `;
+            container.appendChild(row);
+        };
+
+        window.saveEditedQuestion = async function() {
+            const qId = document.getElementById('edit-q-id').value;
+            const zh = document.getElementById('edit-zh').value.trim();
+            const en = document.getElementById('edit-en').value.trim();
+            const sentenceHint = document.getElementById('edit-sentence-hint').value.trim();
+
+            if (!zh || !en) {
+                showToast('中文題目與標準英文解答不能為空喔！', 'warning');
+                return;
+            }
+
+            const chunkItems = document.querySelectorAll('.edit-chunk-item');
+            const chunks = [];
+            chunkItems.forEach(item => {
+                const cZh = item.querySelector('.chunk-zh').value.trim();
+                const cEn = item.querySelector('.chunk-en').value.trim();
+                if (cZh && cEn) {
+                    chunks.push({ zh: cZh, en: cEn });
+                }
+            });
+
+            if (chunks.length === 0) {
+                showToast('請至少保留一個語塊拆解步驟！', 'warning');
+                return;
+            }
+
+            const existing = questions.find(item => item.id === qId);
+            const updatedQuestion = {
+                id: qId,
+                order: existing ? existing.order : 0,
+                zh,
+                en,
+                sentenceHint,
+                chunks
+            };
+
+            if (db && currentUser) {
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'questions', qId), updatedQuestion);
+            } else {
+                const idx = questions.findIndex(item => item.id === qId);
+                if (idx !== -1) questions[idx] = updatedQuestion;
+                renderAllViews();
+            }
+
+            closeEditModal();
+            showToast('題目與解答已更新，學生端已即時同步！', 'success');
+        };
+
+        window.practiceSpecificQuestion = function(idx) {
+            currentIndex = idx;
+            switchMode('student');
+        };
+
+        window.deleteQuestion = async function(qId) {
+            if (questions.length <= 1) {
+                showToast('題庫至少需要保留一題喔！', 'warning');
+                return;
+            }
+            if (db && currentUser) {
+                await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'questions', qId));
+            } else {
+                questions = questions.filter(q => q.id !== qId);
+                if (currentIndex >= questions.length) currentIndex = 0;
+                renderAllViews();
+            }
+            showToast('已刪除該題目並同步更新', 'info');
+        };
+
+        window.resetToDefaultQuestions = async function() {
+            if (db && currentUser) {
+                const batch = writeBatch(db);
+                questions.forEach(q => {
+                    batch.delete(doc(db, 'artifacts', appId, 'public', 'data', 'questions', q.id));
+                });
+                DEFAULT_QUESTIONS.forEach(q => {
+                    batch.set(doc(db, 'artifacts', appId, 'public', 'data', 'questions', q.id), q);
+                });
+                await batch.commit();
+            } else {
+                questions = [...DEFAULT_QUESTIONS];
+                currentIndex = 0;
+                renderAllViews();
+            }
+            completedRecords = {};
+            showToast('已恢復為預設的 18 道題目！', 'success');
+        };
+
+        // ==================== Gemini API 底層呼叫 (含指數退避重試) ====================
+        async function callGeminiWithRetry(systemPrompt, userQuery, maxRetries = 4) {
+            const apiKey = customApiKey || ""; 
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`;
+
+            const payload = {
+                contents: [{ parts: [{ text: userQuery }] }],
+                systemInstruction: { parts: [{ text: systemPrompt }] }
+            };
+
+            let delay = 1000;
+            for (let attempt = 0; attempt <= maxRetries; attempt++) {
+                try {
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+
+                    const result = await response.json();
+                    const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
+                    if (text) return text;
+                    throw new Error("Empty response from AI");
+                } catch (err) {
+                    if (attempt === maxRetries) throw err;
+                    await new Promise(res => setTimeout(res, delay));
+                    delay *= 2;
+                }
+            }
+        }
+
+        async function callGeminiStructuredWithRetry(systemPrompt, userQuery, responseSchema, maxRetries = 4) {
+            const apiKey = customApiKey || ""; 
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`;
+
+            const payload = {
+                contents: [{ parts: [{ text: userQuery }] }],
+                systemInstruction: { parts: [{ text: systemPrompt }] },
+                generationConfig: {
+                    responseMimeType: "application/json",
+                    responseSchema: responseSchema
+                }
+            };
+
+            let delay = 1000;
+            for (let attempt = 0; attempt <= maxRetries; attempt++) {
+                try {
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+
+                    const result = await response.json();
+                    const jsonText = result.candidates?.[0]?.content?.parts?.[0]?.text;
+                    if (jsonText) return JSON.parse(jsonText);
+                    throw new Error("Empty structured response from AI");
+                } catch (err) {
+                    if (attempt === maxRetries) throw err;
+                    await new Promise(res => setTimeout(res, delay));
+                    delay *= 2;
+                }
+            }
+        }
+    </script>
+</body>
+</html>
